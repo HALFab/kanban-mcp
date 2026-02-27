@@ -1,0 +1,34 @@
+[Unit]
+Description=kanban-mcp web-server (Fastify UI/API)
+After=network.target
+
+[Service]
+Type=simple
+User=patrick
+Group=patrick
+WorkingDirectory=/home/patrick/.openclaw/projects/kanban-mcp/web-server
+EnvironmentFile=/etc/kanban-mcp-web.env
+
+# Run compiled JS directly (more reliable than npm in systemd)
+ExecStart=/usr/bin/node /home/patrick/.openclaw/projects/kanban-mcp/web-server/dist/index.js
+
+Restart=on-failure
+RestartSec=2
+
+# Hardening (safe defaults)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# ProtectHome=true blocks access to /home entirely, which breaks WorkingDirectory under /home/patrick.
+# Either move the app to /opt, or relax this hardening.
+ProtectHome=read-only
+
+ReadWritePaths=/home/patrick/.openclaw/projects/db
+
+# Logs
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kanban-mcp-web
+
+[Install]
+WantedBy=multi-user.target

@@ -48,4 +48,9 @@ dist
 .DS_Store
 
 # Embedded DB:
+db/
+mcp-server/db/
 db2
+
+# pnpm
+pnpm-lock.yaml

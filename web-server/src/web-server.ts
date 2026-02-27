@@ -27,9 +27,21 @@ class WebServer {
       logger: true
     });
 
-    // Register CORS plugin with localhost-only configuration
+    // CORS: default to localhost-only, but allow override via env.
+    // Example:
+    //   MCP_KANBAN_WEB_CORS_ORIGINS="http://localhost:8221,http://127.0.0.1:8221,https://kanban.example.com"
+    const corsOrigins = (process.env.MCP_KANBAN_WEB_CORS_ORIGINS ?? "http://localhost:8221,http://127.0.0.1:8221")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     this.server.register(fastifyCors, {
-      origin: ["http://localhost:8221", "http://127.0.0.1:8221"],
+      origin: (origin, cb) => {
+        // Non-browser clients (curl, server-to-server) often send no Origin.
+        if (!origin) return cb(null, true);
+        if (corsOrigins.includes(origin)) return cb(null, true);
+        return cb(new Error("CORS origin not allowed"), false);
+      },
       methods: ["GET", "PUT", "POST", "DELETE", "OPTIONS"],
       credentials: true,
     });
@@ -239,7 +251,7 @@ class WebServer {
     // Serve static files for the React app
     this.server.register(fastifyStatic, {
       root: path.join(__dirname, "../../../web-ui/dist"),
-      prefix: "/"
+      prefix: "/",
     });
   }
 
@@ -248,8 +260,10 @@ class WebServer {
    */
   async start(): Promise<void> {
     try {
-      await this.server.listen({ port: 8221, host: "localhost" });
-      console.log(`Server is running at http://localhost:8221`);
+      const port = Number(process.env.MCP_KANBAN_WEB_PORT ?? "3000");
+      const host = process.env.MCP_KANBAN_WEB_HOST ?? "127.0.0.1";
+      await this.server.listen({ port, host });
+      console.log(`Server is running at http://${host}:${port}`);
     } catch (err) {
       this.server.log.error(err);
       process.exit(1);
