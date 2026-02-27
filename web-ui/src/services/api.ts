@@ -1,4 +1,4 @@
-import { Board, ColumnWithTasks, Task } from '../types';
+import { Board, ColumnWithTasks, Task, Assignee } from '../types';
 
 const API_BASE_URL = '/api';
 
@@ -69,6 +69,31 @@ export async function updateTask(taskId: string, content: string): Promise<{
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(errorData.error || `Failed to update task with ID ${taskId}`);
+  }
+
+  return response.json();
+}
+
+export async function setTaskAssignee(
+  taskId: string,
+  assignee: Assignee,
+  reason?: string
+): Promise<{
+  success: boolean;
+  message: string;
+  task: Task;
+}> {
+  const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/assignee`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ assignee, reason }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error || `Failed to set assignee for task ${taskId}`);
   }
 
   return response.json();

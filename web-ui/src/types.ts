@@ -7,6 +7,8 @@ export interface Board {
   updated_at: string;
 }
 
+export type Assignee = 'USER' | 'AGENT';
+
 export interface TaskSummary {
   id: string;
   title: string;
@@ -14,6 +16,7 @@ export interface TaskSummary {
   createdAt: string;
   updatedAt: string;
   updateReason?: string;
+  assignee: Assignee;
 }
 
 export interface ColumnWithTasks {
@@ -34,4 +37,5 @@ export interface Task {
   created_at: string;
   updated_at: string;
   update_reason?: string;
+  assignee: Assignee;
 }

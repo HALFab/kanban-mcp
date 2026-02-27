@@ -33,6 +33,8 @@ export interface Column {
   is_done_column: number;
 }
 
+export type Assignee = "USER" | "AGENT";
+
 export interface Task {
   id: string;
   column_id: string;
@@ -42,6 +44,8 @@ export interface Task {
   created_at: string;
   updated_at: string;
   update_reason?: string;
+  assignee: Assignee;
+  metadata?: string;
 }
 
 export interface TaskSummary {
@@ -51,6 +55,7 @@ export interface TaskSummary {
   createdAt: string;
   updatedAt: string;
   updateReason?: string;
+  assignee: Assignee;
 }
 
 export interface ColumnWithTasks {
@@ -170,7 +175,7 @@ export class KanbanDB {
 
   public getTaskById(taskId: string): Task | undefined {
     const findTaskStmt = this.db.prepare<[string], Task>(`
-      SELECT id, column_id, title, content, position, created_at, updated_at, update_reason
+      SELECT id, column_id, title, content, position, created_at, updated_at, update_reason, assignee, metadata
       FROM tasks 
       WHERE id = ?
     `);
@@ -191,7 +196,8 @@ export class KanbanDB {
   public addTaskToColumn(
     columnId: string,
     title: string,
-    content: string
+    content: string,
+    assignee: Assignee = "USER"
   ): Task {
     // Get the column
     const column = this.getColumnById(columnId);
@@ -212,15 +218,15 @@ export class KanbanDB {
     const position = taskCount;
 
     const insertTaskStmt = this.db.prepare<
-      [string, string, string, string, number, string, string]
+      [string, string, string, string, number, string, string, Assignee]
     >(`
-      INSERT INTO tasks (id, column_id, title, content, position, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, column_id, title, content, position, created_at, updated_at, assignee)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    insertTaskStmt.run(taskId, columnId, title, content, position, now, now);
+    insertTaskStmt.run(taskId, columnId, title, content, position, now, now, assignee);
 
-    return {
+    const task: Task = {
       id: taskId,
       column_id: columnId,
       title,
@@ -228,10 +234,19 @@ export class KanbanDB {
       position,
       created_at: now,
       updated_at: now,
+      assignee,
     };
+
+    this.emitInboxEventIfAgent(task, {
+      eventType: "task.created",
+    });
+
+    return task;
   }
 
   public moveTask(taskId: string, targetColumnId: string, reason?: string): void {
+    const taskBefore = this.getTaskById(taskId);
+
     // Get the target column
     const targetColumn = this.getColumnById(targetColumnId);
     if (!targetColumn) {
@@ -256,6 +271,14 @@ export class KanbanDB {
     `);
 
     updateTaskStmt.run(targetColumnId, position, now, reason || null, taskId);
+
+    const taskAfter = this.getTaskById(taskId);
+    if (taskAfter) {
+      this.emitInboxEventIfAgent(taskAfter, {
+        eventType: "task.moved",
+        before: taskBefore ?? undefined,
+      });
+    }
   }
 
   public getColumnsForBoard(boardId: string): Column[] {
@@ -279,9 +302,10 @@ export class KanbanDB {
         created_at: string;
         updated_at: string;
         update_reason?: string;
+        assignee: Assignee;
       }
     >(`
-      SELECT id, title, position, created_at, updated_at, update_reason
+      SELECT id, title, position, created_at, updated_at, update_reason, assignee
       FROM tasks
       WHERE column_id = ?
       ORDER BY position ASC
@@ -296,6 +320,7 @@ export class KanbanDB {
       createdAt: task.created_at,
       updatedAt: task.updated_at,
       updateReason: task.update_reason,
+      assignee: task.assignee,
     }));
   }
 
@@ -354,12 +379,48 @@ export class KanbanDB {
 
     updateTaskStmt.run(content, now, taskId);
 
-    // Return the updated task
-    return {
+    const updated: Task = {
       ...task,
       content,
-      updated_at: now
+      updated_at: now,
     };
+
+    this.emitInboxEventIfAgent(updated, {
+      eventType: "task.updated",
+      before: task,
+    });
+
+    return updated;
+  }
+
+  public setTaskAssignee(
+    taskId: string,
+    assignee: Assignee,
+    reason?: string
+  ): Task | undefined {
+    const before = this.getTaskById(taskId);
+    if (!before) return undefined;
+
+    const now = new Date().toISOString();
+
+    const updateStmt = this.db.prepare<[Assignee, string, string | null, string]>(`
+      UPDATE tasks
+      SET assignee = ?, updated_at = ?, update_reason = ?
+      WHERE id = ?
+    `);
+
+    updateStmt.run(assignee, now, reason ?? null, taskId);
+
+    const after = this.getTaskById(taskId);
+    if (after) {
+      // Only emit if it's assigned to the agent now.
+      this.emitInboxEventIfAgent(after, {
+        eventType: "task.assignee.changed",
+        before,
+      });
+    }
+
+    return after;
   }
 
   public deleteTask(taskId: string): number {
@@ -410,6 +471,58 @@ export class KanbanDB {
     return result.changes;
   }
 
+  private emitInboxEventIfAgent(
+    task: Task,
+    opts: {
+      eventType: string;
+      before?: Task;
+    }
+  ): void {
+    if (task.assignee !== "AGENT") return;
+
+    const inboxDir = process.env.MCP_KANBAN_INBOX_DIR;
+    if (!inboxDir) return;
+
+    try {
+      fs.mkdirSync(inboxDir, { recursive: true });
+
+      const boardId = this.getBoardIdForTask(task.id);
+      const event = {
+        source: "kanban-mcp",
+        eventType: opts.eventType,
+        ts: new Date().toISOString(),
+        taskId: task.id,
+        boardId,
+        columnId: task.column_id,
+        title: task.title,
+        assignee: task.assignee,
+        beforeAssignee: opts.before?.assignee,
+      };
+
+      const safeTs = event.ts.replace(/[:.]/g, "-");
+      const filePath = `${inboxDir}/kanban-${safeTs}-${task.id}.json`;
+      fs.writeFileSync(filePath, JSON.stringify(event, null, 2) + "\n", {
+        encoding: "utf8",
+        flag: "wx",
+      });
+    } catch {
+      // Best-effort: never fail DB operations due to event emission.
+    }
+  }
+
+  private getBoardIdForTask(taskId: string): string | null {
+    const stmt = this.db.prepare<[string], { board_id: string }>(`
+      SELECT c.board_id as board_id
+      FROM tasks t
+      JOIN columns c ON c.id = t.column_id
+      WHERE t.id = ?
+      LIMIT 1
+    `);
+
+    const row = stmt.get(taskId);
+    return row?.board_id ?? null;
+  }
+
   private generateUUID(): string {
     return crypto.randomUUID();
   }
@@ -444,10 +557,24 @@ export class KanbanDB {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         update_reason TEXT,
+        assignee TEXT NOT NULL DEFAULT 'USER',
         metadata TEXT,
         FOREIGN KEY (column_id) REFERENCES columns(id)
       );
     `);
+
+    // Lightweight migrations for older DB files.
+    this.migrateIfNeeded();
+  }
+
+  private migrateIfNeeded(): void {
+    // Add tasks.assignee if missing (older DB schema).
+    const cols = this.db.prepare<[], { name: string }>("PRAGMA table_info(tasks)").all();
+    const hasAssignee = cols.some((c) => c.name === "assignee");
+
+    if (!hasAssignee) {
+      this.db.exec("ALTER TABLE tasks ADD COLUMN assignee TEXT NOT NULL DEFAULT 'USER'");
+    }
   }
 }
 

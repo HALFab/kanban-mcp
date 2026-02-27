@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { XMarkIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getTaskById, updateTask } from '../services/api';
+import { getTaskById, setTaskAssignee, updateTask } from '../services/api';
 import MarkdownRenderer from './MarkdownRenderer';
+import { Assignee } from '../types';
 
 interface TaskDetailProps {
   taskId: string | null;
@@ -47,6 +48,16 @@ export default function TaskDetail({
       queryClient.invalidateQueries({ queryKey: ['task', taskId] as const });
       setIsEditing(false);
     }
+  });
+
+  const setAssigneeMutation = useMutation({
+    mutationFn: ({ taskId, assignee, reason }: { taskId: string; assignee: Assignee; reason?: string }) =>
+      setTaskAssignee(taskId, assignee, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] as const });
+      // Board list data includes summaries; refresh so badges/filters update.
+      queryClient.invalidateQueries({ queryKey: ['board'] });
+    },
   });
 
   const handleEditClick = () => {
@@ -194,6 +205,30 @@ export default function TaskDetail({
                       <div>
                         <h3 className="text-base font-medium text-gray-600">Details</h3>
                         <dl className="mt-2 divide-y divide-gray-200 border-t border-b border-gray-200">
+                          <div className="flex justify-between py-3 text-sm items-center">
+                            <dt className="text-gray-500">Assignee</dt>
+                            <dd className="text-gray-900">
+                              <select
+                                value={task.assignee}
+                                onChange={(e) => {
+                                  const next = e.target.value as Assignee;
+                                  setAssigneeMutation.mutate({
+                                    taskId: task.id,
+                                    assignee: next,
+                                    reason:
+                                      next === 'AGENT'
+                                        ? 'Assigned to agent for action'
+                                        : 'Handed back to user',
+                                  });
+                                }}
+                                disabled={setAssigneeMutation.isPending}
+                                className="border border-gray-300 rounded-md px-2 py-1 text-sm bg-white"
+                              >
+                                <option value="USER">USER</option>
+                                <option value="AGENT">AGENT</option>
+                              </select>
+                            </dd>
+                          </div>
                           <div className="flex justify-between py-3 text-sm">
                             <dt className="text-gray-500">Created</dt>
                             <dd className="text-gray-900">{new Date(task.created_at).toLocaleString()}</dd>

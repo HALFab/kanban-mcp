@@ -8,6 +8,7 @@ import {
   ColumnWithTasks,
   createDBInstance,
   ColumnCapacityFullError,
+  Assignee,
 } from "@kanban-mcp/db";
 
 dayjs.extend(relativeTime);
@@ -390,7 +391,7 @@ mcpServer.tool(
       };
     }
 
-    let responseText = `Retrieved task "${task.title}" with ID: ${task.id}.\n\nContent:\n\n${task.content}`;
+    let responseText = `Retrieved task "${task.title}" with ID: ${task.id}.\nAssignee: ${task.assignee}\n\nContent:\n\n${task.content}`;
 
     if (task.update_reason) {
       responseText += `\n\nUpdate reason: ${task.update_reason}`;
@@ -401,6 +402,40 @@ mcpServer.tool(
         {
           type: "text",
           text: responseText,
+        },
+      ],
+    };
+  }
+);
+
+mcpServer.tool(
+  "set-task-assignee",
+  "Set a task assignee to USER or AGENT. Assign to AGENT when you want the agent to act on it; set back to USER when handed back.",
+  {
+    taskId: z.string(),
+    assignee: z.enum(["USER", "AGENT"]),
+    reason: z.string().optional(),
+  },
+  async ({ taskId, assignee, reason }) => {
+    const task = kanbanDB.setTaskAssignee(taskId, assignee as Assignee, reason);
+
+    if (!task) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: Could not find task with ID: ${taskId}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Set assignee for task "${task.title}" (${task.id}) to ${task.assignee}.`,
         },
       ],
     };

@@ -39,9 +39,18 @@ export default function TaskCard({ task, column, isMoving = false }: TaskCardPro
       } ${isDragging ? 'opacity-50' : ''}`}
     >
       <h4 className="text-sm font-medium text-gray-900 truncate">{task.title}</h4>
-      <div className="mt-2 flex justify-between items-center">
+      <div className="mt-2 flex justify-between items-center gap-2">
         <span className="text-xs text-gray-500">
           {new Date(task.updatedAt).toLocaleDateString()}
+        </span>
+        <span
+          className={`text-[10px] px-2 py-0.5 rounded-full border ${
+            task.assignee === 'AGENT'
+              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+              : 'bg-gray-50 text-gray-700 border-gray-200'
+          }`}
+        >
+          {task.assignee}
         </span>
       </div>
     </div>

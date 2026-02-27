@@ -183,6 +183,45 @@ class WebServer {
       }
     );
 
+    // Set a task's assignee (USER|AGENT)
+    this.server.put(
+      "/api/tasks/:taskId/assignee",
+      async (
+        request: FastifyRequest<{
+          Params: { taskId: string };
+          Body: { assignee: "USER" | "AGENT"; reason?: string };
+        }>,
+        reply: FastifyReply
+      ) => {
+        try {
+          const { taskId } = request.params;
+          const { assignee, reason } = request.body as {
+            assignee: "USER" | "AGENT";
+            reason?: string;
+          };
+
+          const task = this.kanbanDB.getTaskById(taskId);
+          if (!task) {
+            return reply.code(404).send({ error: "Task not found" });
+          }
+
+          const updatedTask = this.kanbanDB.setTaskAssignee(taskId, assignee, reason);
+          if (!updatedTask) {
+            return reply.code(500).send({ error: "Failed to update assignee" });
+          }
+
+          return reply.code(200).send({
+            success: true,
+            message: "Assignee updated successfully",
+            task: updatedTask,
+          });
+        } catch (error) {
+          request.log.error(error);
+          return reply.code(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
     // Move a task to a different column
     this.server.post(
       "/api/tasks/:taskId/move",
