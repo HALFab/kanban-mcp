@@ -1,0 +1,28 @@
+[Unit]
+Description=kanban-mcp → OpenClaw agent bridge (inbox watcher)
+After=network.target
+
+[Service]
+Type=simple
+User=patrick
+Group=patrick
+WorkingDirectory=/home/patrick/.openclaw/projects/kanban-mcp
+EnvironmentFile=/etc/kanban-agent-bridge.env
+
+ExecStart=/usr/bin/node /home/patrick/.openclaw/projects/kanban-mcp/deploy/agent-bridge/kanban-agent-bridge.mjs
+
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/patrick/.openclaw
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kanban-agent-bridge
+
+[Install]
+WantedBy=multi-user.target
