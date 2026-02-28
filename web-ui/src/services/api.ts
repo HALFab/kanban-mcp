@@ -26,6 +26,32 @@ export async function getTaskById(taskId: string): Promise<Task> {
   return response.json();
 }
 
+export async function createTask(
+  boardId: string,
+  title: string,
+  content: string,
+  assignee: Assignee = 'USER'
+): Promise<{
+  success: boolean;
+  message: string;
+  task: Task;
+}> {
+  const response = await fetch(`${API_BASE_URL}/boards/${boardId}/tasks`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title, content, assignee }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error || `Failed to create task on board ${boardId}`);
+  }
+
+  return response.json();
+}
+
 export async function moveTask(taskId: string, targetColumnId: string, reason?: string): Promise<{
   success: boolean;
   message: string;

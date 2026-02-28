@@ -92,6 +92,52 @@ class WebServer {
       }
     );
 
+    // Create a task on a board (goes to landing column)
+    this.server.post(
+      "/api/boards/:boardId/tasks",
+      async (
+        request: FastifyRequest<{
+          Params: { boardId: string };
+          Body: { title: string; content: string; assignee?: "USER" | "AGENT" };
+        }>,
+        reply: FastifyReply
+      ) => {
+        try {
+          const { boardId } = request.params;
+          const { title, content, assignee } = request.body as {
+            title: string;
+            content: string;
+            assignee?: "USER" | "AGENT";
+          };
+
+          const board = this.kanbanDB.getBoardById(boardId);
+          if (!board) {
+            return reply.code(404).send({ error: "Board not found" });
+          }
+
+          if (!board.landing_column_id) {
+            return reply.code(422).send({ error: "Board has no landing column configured" });
+          }
+
+          const task = this.kanbanDB.addTaskToColumn(
+            board.landing_column_id,
+            title,
+            content,
+            assignee ?? "USER"
+          );
+
+          return reply.code(201).send({
+            success: true,
+            message: "Task created successfully",
+            task,
+          });
+        } catch (error) {
+          request.log.error(error);
+          return reply.code(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
     // Delete a board and all its related data
     this.server.delete(
       "/api/boards/:boardId",
@@ -277,9 +323,15 @@ class WebServer {
       }
     );
 
-    // handle 404 by redirecting to /
+    // SPA fallback: for non-API routes, serve index.html so deep links like /boards/<id> work.
     this.server.setNotFoundHandler((request: FastifyRequest, reply: FastifyReply) => {
-      reply.redirect("/");
+      if (request.url.startsWith("/api")) {
+        return reply.code(404).send({ error: "Not found" });
+      }
+
+      // fastify-static decorates reply with sendFile
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (reply as any).type("text/html").sendFile("index.html");
     });
   }
 

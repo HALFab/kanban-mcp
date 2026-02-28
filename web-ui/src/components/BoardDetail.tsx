@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getBoardWithColumnsAndTasks, moveTask } from "../services/api";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { createTask, getBoardWithColumnsAndTasks, moveTask } from "../services/api";
 import Column from "./Column";
 import TaskDetail from "./TaskDetail";
 import { DragAndDropProvider } from "../contexts/DragAndDropContext";
@@ -10,6 +10,9 @@ import { useNotifications } from "./NotificationContainer";
 export default function BoardDetail() {
   const { boardId } = useParams<{ boardId: string }>();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
   const queryClient = useQueryClient();
   const notifications = useNotifications();
 
@@ -26,6 +29,27 @@ export default function BoardDetail() {
   const handleCloseTaskDetail = () => {
     setSelectedTaskId(null);
   };
+
+  const createTaskMutation = useMutation({
+    mutationFn: ({ title, content }: { title: string; content: string }) => {
+      if (!boardId) throw new Error("Missing boardId");
+      return createTask(boardId, title, content, "USER");
+    },
+    onSuccess: async (res) => {
+      await queryClient.invalidateQueries({ queryKey: ["board", boardId] });
+      setIsCreating(false);
+      setNewTitle("");
+      setNewContent("");
+      if (res?.task?.id) setSelectedTaskId(res.task.id);
+      notifications.success("Task created", "New task added to the board");
+    },
+    onError: (err) => {
+      notifications.error(
+        "Failed to create task",
+        err instanceof Error ? err.message : "Unknown error"
+      );
+    },
+  });
 
   // Find the current column and task index
   const currentColumnAndTaskIndex = useMemo(() => {
@@ -168,14 +192,62 @@ export default function BoardDetail() {
             <h2 className="text-2xl font-bold text-gray-900">{board.name}</h2>
             <p className="mt-1 text-base text-gray-700">{board.goal}</p>
           </div>
-          <Link
-            to="/boards"
-            className="ml-6 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white whitespace-nowrap shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-          >
-            Back to Boards
-          </Link>
+          <div className="ml-6 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setIsCreating(true)}
+              className="rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white whitespace-nowrap shadow-sm hover:bg-gray-800"
+            >
+              New task
+            </button>
+            <Link
+              to="/boards"
+              className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white whitespace-nowrap shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            >
+              Back to Boards
+            </Link>
+          </div>
         </div>
       </div>
+
+      {isCreating && (
+        <div className="mb-6 rounded-md border border-gray-200 bg-gray-50 p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900">Create new task</h3>
+            <button
+              type="button"
+              onClick={() => setIsCreating(false)}
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              Cancel
+            </button>
+          </div>
+          <div className="mt-3 grid gap-3">
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Title"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
+            <textarea
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              placeholder="Content (markdown)"
+              className="w-full h-40 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono"
+            />
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => createTaskMutation.mutate({ title: newTitle, content: newContent })}
+                disabled={!newTitle.trim() || createTaskMutation.isPending}
+                className="rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-800 disabled:opacity-50"
+              >
+                {createTaskMutation.isPending ? "Creating…" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-visible pb-6">
         <DragAndDropProvider onMoveTask={handleMoveTask}>
