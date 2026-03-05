@@ -87,6 +87,17 @@ MCP_KANBAN_DB_FOLDER_PATH=/path/to/db npm run start --prefix web-server
 
 Open the browser at http://localhost:8221
 
+## Systemd deployment (web on port 3000, no nginx)
+
+If you want a host-local deployment with:
+- web UI/API on `127.0.0.1:3000`
+- optional `kanban-agent-bridge` worker for `AGENT` assignee events
+
+see:
+- `deploy/systemd/INSTALL-BRIDGE.md`
+- `deploy/systemd/kanban-mcp-web.service`
+- `deploy/systemd/kanban-agent-bridge.service`
+
 ## API
 ### Tools
 
